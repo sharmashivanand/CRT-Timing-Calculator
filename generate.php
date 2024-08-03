@@ -128,9 +128,6 @@ function generateModeline( $smodeline = '' ) {
 		$modeline['refreshRate'] = $r1;
 	}
 
-	// print_r( 'Original Modeline' );
-	// print_r( $modeline );
-
 	// Calculate derived values
 	$hfp   = $modeline['hsyncStart'] - $modeline['hactive'];
 	$hsync = $modeline['hsyncEnd'] - $modeline['hsyncStart'];
