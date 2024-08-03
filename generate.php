@@ -1,5 +1,77 @@
 <?php
 
+// Function to calculate the greatest common divisor
+function gcd( $a, $b ) {
+	return $b ? gcd( $b, $a % $b ) : $a;
+}
+
+// Function to calculate and return the closest aspect ratio value (1-8)
+function getAspectRatio( $width, $height ) {
+	// Calculate the GCD and reduce the dimensions
+	$gcd           = gcd( $width, $height );
+	$reducedWidth  = $width / $gcd;
+	$reducedHeight = $height / $gcd;
+	$aspectRatio   = $reducedWidth / $reducedHeight; // Calculate the decimal aspect ratio
+
+	// Define known aspect ratios and their corresponding values
+	$aspectRatios = array(
+		'4:3'   => array(
+			'ratio' => 1.3333,
+			'value' => 1,
+		),
+		'14:9'  => array(
+			'ratio' => 1.5556,
+			'value' => 2,
+		),
+		'16:9'  => array(
+			'ratio' => 1.7778,
+			'value' => 3,
+		),
+		'5:4'   => array(
+			'ratio' => 1.25,
+			'value' => 4,
+		),
+		'16:10' => array(
+			'ratio' => 1.6,
+			'value' => 5,
+		),
+		'15:9'  => array(
+			'ratio' => 1.6667,
+			'value' => 6,
+		),
+		'21:9'  => array(
+			'ratio' => 2.3333,
+			'value' => 7,
+		),
+		'64:27' => array(
+			'ratio' => 2.3704,
+			'value' => 8,
+		),
+	);
+
+	// Initialize variables to find the closest aspect ratio
+	$closestValue      = null;
+	$minimumDifference = PHP_FLOAT_MAX;
+
+	// Iterate through each aspect ratio to find the closest one
+	foreach ( $aspectRatios as $key => $info ) {
+		// Calculate the absolute difference between the current ratio and the computed ratio
+		$difference = abs( $info['ratio'] - $aspectRatio );
+
+		// Check if this difference is the smallest we have encountered
+		print_r( 'Difference: ' . $difference . ' Minimum Difference' . $minimumDifference . PHP_EOL );
+		if ( $difference < $minimumDifference ) {
+			$minimumDifference = $difference;
+			$closestValue      = $info['value'];
+		}
+	}
+
+	// Return the value associated with the closest aspect ratio
+	print_r( 'Aspect Ratio: ' . $closestValue . PHP_EOL );
+	return $closestValue;
+}
+
+
 function generateModeline( $smodeline ) {
 	$pattern = '/Modeline\s+".*"\s+(\d+\.\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\S+)/';
 	preg_match( $pattern, $smodeline, $matches );
@@ -19,7 +91,7 @@ function generateModeline( $smodeline ) {
 		'refreshRate'   => 0,
 	);
 	// Extract values from regex matches
-	// $modeline['pixelClock']    = floatval( $matches[1] ) * 1000000; // Hz
+	$modeline['pixelClock']    = floatval( $matches[1] ) * 1000000; // Hz
 	$modeline['hactive']       = intval( $matches[2] );
 	$modeline['hsyncStart']    = intval( $matches[3] );
 	$modeline['hsyncEnd']      = intval( $matches[4] );
@@ -39,10 +111,9 @@ function generateModeline( $smodeline ) {
 	if ( $r1 === $r2 ) {
 		$modeline['refreshRate'] = $r1;
 	}
-    
 
-	print_r( 'Original Modeline' );
-	print_r( $modeline );
+	// print_r( 'Original Modeline' );
+	// print_r( $modeline );
 
 	// Calculate derived values
 	$hfp   = $modeline['hsyncStart'] - $modeline['hactive'];
@@ -52,21 +123,24 @@ function generateModeline( $smodeline ) {
 	$vsync = $modeline['vsyncEnd'] - $modeline['vsyncStart'];
 	$vbp   = $modeline['vtotal'] - $modeline['vsyncEnd'];
 
-    $hFreq = $modeline['pixelClock'] / $modeline['htotal']; // in Hz
-    $vFreq = $hFreq / $modeline['vtotal']; // in Hz
-    $cvt_modeline = array(
-        'hactive' => $modeline['hactive'],
-        'hblank'  => $horizontal_blanking,
-        'vactive' => $modeline['vactive'],
-        'vblank'  => $vertical_blanking,
-        'refreshRate' => $vFreq
-    );
-    print_r( 'Calculated CVT Modeline' );
-    print_r( $cvt_modeline );
-    return;
+	$hFreq               = $modeline['pixelClock'] / $modeline['htotal']; // in Hz
+	$vFreq               = $hFreq / $modeline['vtotal']; // in Hz
+	$horizontal_blanking = max( 160, ceil( $modeline['hactive'] * 0.2 / 8 ) * 8 );
+	$vertical_blanking   = max( 3, ceil( $vFreq / 60 ) ); // Example calculation, adjust logic as needed
 
-	$dtparm = array(
-		// 'clock-frequency' => $modeline['htotal'] * $modeline['vtotal'] * $modeline['refreshRate'], // Pixel Clock (Hz)
+	$cvt_modeline = array(
+		'hactive'     => $modeline['hactive'],
+		'hblank'      => $horizontal_blanking,
+		'vactive'     => $modeline['vactive'],
+		'vblank'      => $vertical_blanking,
+		'refreshRate' => $vFreq,
+	);
+	// print_r( 'Calculated CVT Modeline' );
+	// print_r( $cvt_modeline );
+	// return;
+
+	$dtparam = array(
+		'clock-frequency' => $modeline['htotal'] * $modeline['vtotal'] * $modeline['refreshRate'], // Pixel Clock (Hz)
 		'hactive'         => $modeline['hactive'], // Horizontal Active
 		'hfp'             => $hfp, // Horizontal Front Porch
 		'hsync'           => $hsync, // Horizontal Sync
@@ -79,38 +153,111 @@ function generateModeline( $smodeline ) {
 	);
 
 	if ( $modeline['hsyncPolarity'] < 0 ) {
-		$dtparm['hsync-invert'] = 'hsync-invert';
+		$dtparam['hsync-invert'] = 'hsync-invert';
 	} else {
-		$dtparm['hsync-invert'] = 'hsync-noinvert';
+		$dtparam['hsync-invert'] = 'hsync-noinvert';
 	}
 	if ( $modeline['vsyncPolarity'] < 0 ) {
-		$dtparm['vsync-invert'] = 'vsync-invert';
+		$dtparam['vsync-invert'] = 'vsync-invert';
 	} else {
-		$dtparm['vsync-invert'] = 'vsync-noinvert';
+		$dtparam['vsync-invert'] = 'vsync-noinvert';
 	}
 
-	print_r( 'Calculated dtparm values:' . PHP_EOL );
+	print_r( 'Calculated dtparam values for KMS:' . PHP_EOL );
 	print_r(
-		'dtoverlay=vc4-kms-dpi-generic,'
-		. 'hactive=' . $dtparm['hactive'] . ','
-		. 'hfp=' . $dtparm['hfp'] . ','
-		. 'hsync=' . $dtparm['hsync'] . ','
-		. 'hbp=' . $dtparm['hbp'] . PHP_EOL
-		. 'dtparm=vactive=' . $dtparm['vactive'] . ','
-		. 'vfp=' . $dtparm['vfp'] . ','
-		. 'vsync=' . $dtparm['vsync'] . ','
-		. 'vbp=' . $dtparm['vbp'] . ',' . PHP_EOL
-		. 'dtparm=clock-frequency=' . $dtparm['clock-frequency'] . ','
-		// . 'frame_rate=' . $dtparm['frame_rate'] . ','
-		. $dtparm['hsync-invert'] . ','
-		. $dtparm['vsync-invert'] . ',rgb666' .
+		'dtoverlay=vc4-kms-dpi-generic,rgb666,'
+		. 'clock-frequency=' . $dtparam['clock-frequency'] . PHP_EOL
+		. 'dtparam=hactive=' . $dtparam['hactive'] . ','
+		. $dtparam['hsync-invert'] . ','
+		. 'hfp=' . $dtparam['hfp'] . ','
+		. 'hsync=' . $dtparam['hsync'] . ','
+		. 'hbp=' . $dtparam['hbp'] . PHP_EOL
+		. 'dtparam=vactive=' . $dtparam['vactive'] . ','
+		. $dtparam['vsync-invert'] . ','
+		. 'vfp=' . $dtparam['vfp'] . ','
+		. 'vsync=' . $dtparam['vsync'] . ','
+		. 'vbp=' . $dtparam['vbp'] . PHP_EOL
+		// . 'frame_rate=' . $dtparam['frame_rate'] . ','
+	);
 
-		PHP_EOL
+	$dpi_timings = array(
+		'hactive'    => $dtparam['hactive'],
+		'hfp'        => $dtparam['hfp'],
+		'hsync'      => $dtparam['hsync'],
+		'hbp'        => $dtparam['hbp'],
+		'vactive'    => $modeline['vactive'],
+		'vfp'        => $dtparam['vactive'],
+		'vsync'      => $dtparam['vsync'],
+		'vbp'        => $dtparam['vbp'],
+		'frame_rate' => $modeline['refreshRate'],
+	);
+
+	if ( $modeline['hsyncPolarity'] < 0 ) {
+		$dpi_timings['hsync-polarity'] = 1;
+	} else {
+		$dpi_timings['hsync-polarity'] = 0;
+	}
+	if ( $modeline['vsyncPolarity'] < 0 ) {
+		$dpi_timings['vsync-polarity'] = 1;
+	} else {
+		$dpi_timings['vsync-polarity'] = 0;
+	}
+
+	$dpi_timings['aspect_ratio'] = getAspectRatio( $dpi_timings['hactive'], $dpi_timings['vactive'] );
+
+	print_r( PHP_EOL . 'Calculated dpi_timings values for FKMS:' . PHP_EOL );
+	// hdmi_timings=<h_active_pixels> <h_sync_polarity> <h_front_porch> <h_sync_pulse> <h_back_porch> <v_active_lines> <v_sync_polarity> <v_front_porch> <v_sync_pulse> <v_back_porch> <v_sync_offset_a> <v_sync_offset_b> <pixel_rep> <frame_rate> <interlaced> <pixel_freq> <aspect_ratio>
+	print_r(
+		'dtoverlay=vc4-fkms-v3d' . PHP_EOL .
+		'dtoverlay=vga666' . PHP_EOL .
+		'enable_dpi_lcd=1' . PHP_EOL .
+		'display_default_lcd=1' . PHP_EOL .
+		'dpi_group=2' . PHP_EOL .
+		'dpi_mode=87' . PHP_EOL .
+		'dpi_timings='
+		. $dpi_timings['hactive'] . ' ' . $dpi_timings['hsync-polarity'] . ' ' . $dpi_timings['hfp'] . ' ' . $dpi_timings['hsync'] . ' ' . $dpi_timings['hbp'] . ' '
+		. $dpi_timings['vactive'] . ' ' . $dpi_timings['vsync-polarity'] . ' ' . $dpi_timings['vfp'] . ' ' . $dpi_timings['vsync'] . ' ' . $dpi_timings['vbp'] . ' '
+		. '0 0 0 ' . $dpi_timings['frame_rate'] . ' 0 ' . $modeline['pixelClock'] . ' ' . $dpi_timings['aspect_ratio']
 	);
 }
 
 // Example Modeline string
-$modeline = 'Modeline "352x288_50 15.650000KHz 50.000000Hz" 7.152050 352 366 400 457 288 292 295 313 -hsync -vsync';
-$modeline = 'Modeline "360x288_50 15.650000KHz 50.000000Hz" 7.308550 360 375 409 467 288 292 295 313   -hsync -vsync';
+$modeline = 'Modeline "256x240_50 15.600000KHz 50.000000Hz" 4.898400 256 263 286 314 240 267 269 312   -hsync -vsync'; // PAL
 // Process the Modeline
-generateModeline( $modeline );
+// generateModeline( $modeline );
+// echo PHP_EOL . 'PAL' . PHP_EOL;
+
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<title></title>
+	<!-- <link href="style.css" rel="stylesheet" /><script> -->
+	</script>
+</head>
+<body>
+	
+	<form action="generate.php" method="post">
+	<label for="modeline">Modeline</label>
+	<?php
+	if ( ! empty( $_POST['modeline'] ) ) {
+		$value = $_POST['modeline'];
+	} else {
+		$value = '';
+	}
+	?>
+	<input name="modeline" id="modeline" cols="30" rows="10" placeholder="Must start with 'Modeline'" value="<?php echo $value; ?>"></input><br />
+	<button type="submit">Generate</button>
+	<?php
+	if ( isset( $_POST['modeline'] ) ) {
+		?>
+		<br />
+		<textarea name="modeline" id="modeline" cols="80" rows="25" placeholder="Must start with 'Modeline'">
+			<?php generateModeline( $_POST['modeline'] ); ?>
+		</textarea> 
+		<?php
+	}
+	?>
+</body>
+</html>
